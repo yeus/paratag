@@ -1,5 +1,7 @@
-#!/usr/bin/env python
- # -*- coding: utf-8 -*-
+#!/usr/bin/env python3
+# or only python without 3 if system-default python is requestes
+#/usr/bin/python3
+# -*- coding: utf-8 -*-
 
 __author__ = "Thomas Meschede a.k. yeus"
 __copyright__ = "Copyright 2007, Thomas Meschede"
@@ -23,6 +25,9 @@ __status__ = "pre-alpha"
 
 from collections import defaultdict
 import sys #for commandline arguments
+#reload(sys)  
+#sys.setdefaultencoding('utf8')  #for handling pdf files in unicode
+
 from PyPDF2 import PdfFileReader #for pdf reading
 import pandas as pd
 
@@ -38,6 +43,10 @@ from os.path import isfile, join  #for getting files from a directory
 import numpy as np  #for nan
 import logging
 #logging.basicConfig(filename='paratag.log',level=logging.DEBUG)
+
+import sys
+if sys.version_info[0] < 3:
+    raise "Must be using Python 3"
 
 class fileinfos(object):
     def __init__(self,filename):
@@ -87,7 +96,6 @@ class fileinfos(object):
 class directory_infos(object):
     def __init__(self, path="."):
         self.path=path
-        self.filesizes = []
         self.filenum = 0
         self.files=[]
         self.filetypes=defaultdict(list)
@@ -117,6 +125,9 @@ class directory_infos(object):
             
         self.infodb = pd.DataFrame.from_dict(infos)
         self.infodb.to_excel("dirinfo.xls")
+        
+    def get_info(self):
+        return self.infodb['pagenum']
 
 #onlyfiles = [f for f in listdir(mypath) if (isfile(join(mypath, f)) and f[-3:]=='pdf')]  #get all pdf files from a directory
 ##sys arguments: sys.argv
@@ -125,15 +136,13 @@ class directory_infos(object):
     #mfile = fileinfos(f)
     #filesizes += [mfile.get_info('pagenum')]
 
-folder = directory_infos(sys.argv[1])
-
 import matplotlib.mlab as mlab
 import matplotlib.pyplot as plt
 #https://github.com/glamp/bashplotlib
-def plotdistribution():
+def plotdistribution(folder):
     fig, ax = plt.subplots()
     axes = plt.subplot(211) # (figsize=(8,2.5))#(nrows=2, ncols=2)
-    groups=np.array(folder.filesizes)
+    groups=np.array(folder.get_info())
     groups=groups[np.logical_not(np.isnan(groups))]  #get rid of files where information is not available
     np.histogram(groups, bins=20)
     axes.hist(groups,30,histtype='bar',label="pagenumber distribution")
@@ -143,8 +152,22 @@ def plotdistribution():
     axes.set_ylabel=("small pagenumber distribution")
     plt.show()
 
+#folder = directory_infos(sys.argv[1])
 #plotdistribution()
 #print(filesizes)
-print(folder.infodb)
+#print(folder.infodb)
 
+#http://pyxattr.k1024.org/module.html
+import xattr
+filename = './Paper/AI/1509.06825v1.pdf'
+x = xattr.xattr('./Paper/AI/1509.06825v1.pdf')
 
+tags = set([tags for tags in x['user.xdg.tags'].split(b",")])
+
+print(dict(x))
+#print(dict(x['user.baloo.rating']))
+print(tags.update([b'paper']))
+
+print("set tags")
+x['user.xdg.tags']=b",".join(tags)
+#xattr.setxattr(filename,"user.xdg.tag",b"paper")

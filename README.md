@@ -14,3 +14,4 @@ Print all meta information in an image, including duplicate and unknown tags, so
 
     pip install --user pypdf2
     pip install --user xlwt
+    pip install --user xattr  #for setting extended attributes
