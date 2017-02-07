@@ -139,6 +139,19 @@ class directory_infos(object):
     def get_info(self):
         return self.infos
     
+    def clear_paratags(self):
+        for f in self.files:
+            x = xattr.xattr(f)
+            if 'user.xdg.tags' in x:
+                tags = set([tags for tags in x['user.xdg.tags'].split(b",")])
+            else: tags = set()
+    
+            #print(tags)
+            newlist=[x for x in tags if not x.endswith(b'_pt')]
+            #print(newlist)
+            x['user.xdg.tags']=b",".join(newlist)
+            
+            
     def write_tags(self):
         for f,info in self.infos.items():
          try:
@@ -194,7 +207,10 @@ def main():
         from IPython import embed
         embed()
     dirinfos.write_tags()
-    dirinfos.savetoexcel()
+    #dirinfos.savetoexcel()
+    
+    cleartags=True
+    #if cleartags==True: dirinfos.clear_paratags()
 
 
 if __name__ == '__main__':
