@@ -47,6 +47,7 @@ import traceback  #for error reporting
 
 import numpy as np  #for nan
 import logging
+logging.basicConfig
 #logging.basicConfig(filename='paratag.log',level=logging.DEBUG)
 
 import sys
@@ -60,11 +61,11 @@ class fileinfos(object):
         self.info['filename'] = self.filename
         filetype=self.filename.split(".")
         if len(filetype)>1: self.info['type'] = filetype[-1]
-
-        self.get_meta_data()
+        
+        self.get_meta_data() #automatically get metadata as soon as file is created
     
     def get_meta_data(self):
-        print("reading: " +self.filename)
+        logging.info("reading: " +self.filename)
         try:
             #strict=False because of this: https://github.com/mstamy2/PyPDF2/issues/244#issuecomment-173539608
             #it basically helps the pdffilereader stops at all kinds of situations
@@ -78,9 +79,9 @@ class fileinfos(object):
                     pdf_toread.decrypt("")
                     self.extractpdfdata(pdf_toread)
                 except Exception as e: 
-                    print(e)
+                    logging.warning(e)
         except Exception as e:
-            print(traceback.format_exc())
+            logging.error(traceback.format_exc())
             logging.warning("something is wrong with this file: " + self.filename)
             
     def get_info(self,key):
@@ -122,7 +123,7 @@ class directory_infos(object):
             for file in files:
                 self.files+=[os.path.join(subdir, file)]
                 
-        print("size: {}".format(len(self.files)))
+        logging.info("file-size: {}".format(len(self.files)))
         
     def sortfiles(self):
         for f in self.files:
@@ -172,8 +173,8 @@ class directory_infos(object):
             #print("set tags")
             x['user.xdg.tags']=b",".join(tags)
          except Exception as e:
-            print("error setting attributes for file:" + f)
-            print(traceback.format_exc())
+            logging.warning("error setting attributes for file:" + f)
+            logging.error(traceback.format_exc())
 
 #https://github.com/glamp/bashplotlib
 def plotdistribution(folder):
@@ -198,20 +199,30 @@ def plotdistribution(folder):
 #print(folder.infodb)
 
 def main():
-    path="."
-    dirinfos = directory_infos(path)
+    parser = argparse.ArgumentParser(description="paratag")
+    parser.add_argument('-clear',action='store_true', help="clears all paratag 'tags' in this directory")
+    parser.add_argument('-dir',nargs='?', default=".", help="set directory to search for tags [default is current working directory]")
+    parser.add_argument('args', nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    #TODO: configure logging level
 
-    dirinfos.generate_meta_data_table()
-    interactive=False
-    if interactive==True:
-        from IPython import embed
-        embed()
-    dirinfos.write_tags()
-    #dirinfos.savetoexcel()
-    
-    cleartags=True
-    #if cleartags==True: dirinfos.clear_paratags()
-
+    print("analyzing path: " + args.dir)
+    dirinfos = directory_infos(args.dir)    
+    if args.clear==True:
+        print("clear paratags")
+        dirinfos.clear_paratags()
+        return 0
+    else:
+        print("analyze files...")
+        print("write tags...")
+        dirinfos.generate_meta_data_table()
+        interactive=False
+        if interactive==True:
+            from IPython import embed
+            embed()
+        dirinfos.write_tags()
+        #dirinfos.savetoexcel()
+        return 0
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
