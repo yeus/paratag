@@ -1,7 +1,15 @@
 # paratag
-automated tagging of files based on search critera. 
 
+automated tagging of files based on users critera.
 
+paratag := parametric taggig
+paratag := 
+
+paratag analyzes files according to some rules which can be configured by the user
+and automatically writes the information into extended attributes of
+the files and directories.
+
+right now only pdf files are supported.
 
 # interesting commandline applications:
 
