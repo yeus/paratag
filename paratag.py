@@ -35,6 +35,11 @@ import os # for "walk()" function
 from os import listdir  #for listing contents of a directory
 from os.path import isfile, join  #for getting files from a directory
 
+#http://pyxattr.k1024.org/module.html
+import xattr  #for setting and reading xtended attributes
+import argparse #for commandline arguments
+import traceback  #for error reporting
+
 #https://docs.python.org/2/reference/datamodel.html?highlight=__str__#object.__str__
 #for different filetypes: http://stackoverflow.com/questions/10937350/how-to-check-type-of-files-without-extensions-in-python
 #https://pythonhosted.org/PyPDF2/PdfFileReader.html
@@ -53,6 +58,8 @@ class fileinfos(object):
         self.filename=filename
         self.info={}        
         self.info['filename'] = self.filename
+        filetype=self.filename.split(".")
+        if len(filetype)>1: self.info['type'] = filetype[-1]
 
         self.get_meta_data()
     
@@ -67,20 +74,23 @@ class fileinfos(object):
             else:
                 self.info['encrypted']=True
                 try:
+                    self.info['pagenum']=-1 #unknown pagenumber
                     pdf_toread.decrypt("")
                     self.extractpdfdata(pdf_toread)
                 except Exception as e: 
                     print(e)
         except Exception as e:
-            print(e)
+            print(traceback.format_exc())
             logging.warning("something is wrong with this file: " + self.filename)
             
     def get_info(self,key):
         return self.info.get(key,np.nan)
 
     def extractpdfdata(self, pdf_toread):
-        self.info['pdfinfos'] = pdf_toread.getDocumentInfo()
         self.info['pagenum'] = pdf_toread.getNumPages()
+        #TODO: getXmpMetadata()
+        for k,v in pdf_toread.getDocumentInfo().items():  #loop through pdf XMP(?) metadata (exif)
+            self.info[str(k)]=str(v)
 
 #import json
 #>>> print json.dumps({'a':2, 'b':{'x':3, 'y':{'t1': 4, 't2':5}}},
@@ -98,13 +108,13 @@ class directory_infos(object):
         self.path=path
         self.filenum = 0
         self.files=[]
+        self.infos={}
         self.filetypes=defaultdict(list)
         
         self.filter="" #TODO use filter to filter for certain filetypes
                 
         self.readfiles()
         self.sortfiles()
-        self.generate_meta_data_table()
         #self.generatestatistics()
         
     def readfiles(self):
@@ -119,27 +129,44 @@ class directory_infos(object):
             self.filetypes[f[-3:]]+=[f]
         
     def generate_meta_data_table(self):
-        infos=[]
         for f in self.files:
-            infos+=[fileinfos(f).info]
-            
-        self.infodb = pd.DataFrame.from_dict(infos)
-        self.infodb.to_excel("dirinfo.xls")
+            self.infos[f]=fileinfos(f).info
+
+    def savetoexcel(self, filename="dirinfo.xls"):
+        self.infodb = pd.DataFrame.from_dict(self.infos)
+        self.infodb.to_excel(filename)
         
     def get_info(self):
-        return self.infodb['pagenum']
+        return self.infos
+    
+    def write_tags(self):
+        for f,info in self.infos.items():
+         try:
+          if info['type']=='pdf':
+            x = xattr.xattr(f)
 
-#onlyfiles = [f for f in listdir(mypath) if (isfile(join(mypath, f)) and f[-3:]=='pdf')]  #get all pdf files from a directory
-##sys arguments: sys.argv
-#filesizes = []
-#for f in onlyfiles:#[:5]:
-    #mfile = fileinfos(f)
-    #filesizes += [mfile.get_info('pagenum')]
+            #print(x)
+            if 'user.xdg.tags' in x:
+                tags = set([tags for tags in x['user.xdg.tags'].split(b",")])
+            else: tags = set()
 
-import matplotlib.mlab as mlab
-import matplotlib.pyplot as plt
+            if info["pagenum"] > 200:
+                tags.update([b'book_pt'])
+            else:
+                tags.update([b'paper_pt'])
+            #print("setting tags: " + ",".join([i.decode("utf-8") for i in tags]))
+
+            #print("set tags")
+            x['user.xdg.tags']=b",".join(tags)
+         except Exception as e:
+            print("error setting attributes for file:" + f)
+            print(traceback.format_exc())
+
 #https://github.com/glamp/bashplotlib
 def plotdistribution(folder):
+    import matplotlib.mlab as mlab
+    import matplotlib.pyplot as plt
+
     fig, ax = plt.subplots()
     axes = plt.subplot(211) # (figsize=(8,2.5))#(nrows=2, ncols=2)
     groups=np.array(folder.get_info())
@@ -157,17 +184,18 @@ def plotdistribution(folder):
 #print(filesizes)
 #print(folder.infodb)
 
-#http://pyxattr.k1024.org/module.html
-import xattr
-filename = './Paper/AI/1509.06825v1.pdf'
-x = xattr.xattr('./Paper/AI/1509.06825v1.pdf')
+def main():
+    path="."
+    dirinfos = directory_infos(path)
 
-tags = set([tags for tags in x['user.xdg.tags'].split(b",")])
+    dirinfos.generate_meta_data_table()
+    interactive=False
+    if interactive==True:
+        from IPython import embed
+        embed()
+    dirinfos.write_tags()
+    dirinfos.savetoexcel()
 
-print(dict(x))
-#print(dict(x['user.baloo.rating']))
-print(tags.update([b'paper']))
 
-print("set tags")
-x['user.xdg.tags']=b",".join(tags)
-#xattr.setxattr(filename,"user.xdg.tag",b"paper")
+if __name__ == '__main__':
+    main()
