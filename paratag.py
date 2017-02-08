@@ -203,19 +203,22 @@ def plotdistribution(folder):
 
 def main():
     parser = argparse.ArgumentParser(description="paratag")
-    parser.add_argument('-clear',action='store_true', help="clears all paratag 'tags' in this directory")
-    parser.add_argument('-dir',nargs='?', default=".", help="set directory to search for tags [default is current working directory]")
-    parser.add_argument('args', nargs=argparse.REMAINDER)
+    parser.add_argument('-c','--clear',action='store_true', help="clears all paratag 'tags' in this directory")
+    parser.add_argument('-d','--dir',nargs='?', default=".", help="set directory to search for tags (default is current working directory)")
+    parser.add_argument('-w','--write_tags',nargs='?', default=None, help="write tags from database in xtended attributes of files")
+    parser.add_argument('-kw','--keyword', nargs='?', default=None, help="provide a keyword to search for with optional associated tag")
+    parser.add_argument('-s','--stats',action='store_true', help="generate statistics for files and save them into excel file")
+    #parser.add_argument('args', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     #TODO: configure logging level
 
     print("analyzing path: " + args.dir)
     dirinfos = directory_infos(args.dir)    
-    if args.clear==True:
+    if args.clear:
         print("clear paratags")
         dirinfos.clear_paratags()
         return 0
-    else:
+    elif args.write_tags:
         print("analyze files...")
         print("write tags...")
         dirinfos.generate_meta_data_table()
@@ -225,6 +228,11 @@ def main():
             embed()
         dirinfos.write_tags()
         #dirinfos.savetoexcel()
+    elif args.stats:
+        print("analyze files...")
+        dirinfos.generate_meta_data_table()
+        print("save to excel file")
+        dirinfos.savetoexcel("dirinfo.xls")
         return 0
 
 if __name__ == '__main__':
