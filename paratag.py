@@ -48,7 +48,11 @@ import traceback  #for error reporting
 import numpy as np  #for nan
 import logging
 logging.basicConfig
+logging.basicConfig(level=logging.DEBUG)
 #logging.basicConfig(filename='paratag.log',level=logging.DEBUG)
+
+from collections import Counter # for word counting
+import subprocess  #to process all kinds of files and capture stdout
 
 import sys
 if sys.version_info[0] < 3:
@@ -60,17 +64,25 @@ class fileinfos(object):
         self.info={}        
         self.info['filename'] = self.filename
         filetype=self.filename.split(".")
-        if len(filetype)>1: self.info['type'] = filetype[-1]
+        if len(filetype)>=1: self.info['type'] = filetype[-1]
         
-        self.get_meta_data() #automatically get metadata as soon as file is created
+        self.metadata_read=False  #for some functions that need metadata as a prerequisite (like word_count)
+        self.get_meta_data()
+        #TODO: initialize file database (that can be used to generate scores)
     
+    #TODO: extract more metainformation with this method:
+    #https://pythonhosted.org/PyPDF2/PageObject.html#PyPDF2.pdf.PageObject
+    #for example, extracting page dimensions (and recognizing presentations)
     def get_meta_data(self):
         logging.info("reading: " +self.filename)
-        if self.info['type'] == 'pdf':
+        if self.info['type'] =='pdf':
             try:
                 #strict=False because of this: https://github.com/mstamy2/PyPDF2/issues/244#issuecomment-173539608
                 #it basically helps the pdffilereader stops at all kinds of situations
-                pdf_toread = PdfFileReader(open(self.filename, "rb"), strict=False) 
+                pdf_toread = PdfFileReader(open(self.filename, "rb"), strict=False)
+                self.pdf_toread=pdf_toread
+                self.metadata_read=True
+                #TODO: increase pdf score
                 self.info['pagenum']=-1 #potential unknown pagenumber if decrypted
                 try:
                     if pdf_toread.isEncrypted: 
@@ -93,6 +105,36 @@ class fileinfos(object):
     def get_info(self,key):
         return self.info.get(key,np.nan)
 
+    def word_count(self,keyword=None):
+        #TODO: from collections import Counter  #for counting all words
+        if not self.metadata_read: self.get_meta_data()#
+        try:
+            logging.info("counting words")
+            c=Counter() #https://docs.python.org/3.5/library/collections.html#collections.Counter
+            #the pypdf2 method does not work well for extracting text
+            #for p in self.pdf_toread.pages:
+                #pagetext=p.extractText()
+                ##pagetext.replace("\n","")
+                ##print(p.getContents())
+                #c.update([s.split(pagetext)])
+                ##from IPython import embed; embed()
+                #word_count=0
+            
+            #TODO: maybe using ps2ascii?  whicever is faster...
+            print(os.getcwd())
+            txt = subprocess.check_output(['pdf2txt "{}"'.format(self.filename)], shell=True)
+            #proc = subprocess.Popen(["pdf2txt", self.filename], stdout=subprocess.PIPE, shell=True)
+            #(out, err) = proc.communicate()
+            #print(out,err)
+            #from IPython import embed; embed()
+            txt=txt.lower().split()
+            c.update(txt)
+            self.info["word_count"]=sum(c.values())
+            self.info["most_common_word"]=c.most_common(1)
+            if keyword: self.info["score"]=c.get(keyword.encode('utf-8'))
+        except Exception as e:
+            logging.error(traceback.format_exc())
+
 #import json
 #>>> print json.dumps({'a':2, 'b':{'x':3, 'y':{'t1': 4, 't2':5}}},
 #...                  sort_keys=True, indent=4)
@@ -106,22 +148,29 @@ class fileinfos(object):
 
 class directory_infos(object):
     def __init__(self, path="."):
-        self.path=path
+        self.path= os.path.join(os.getcwd(),path)
+        print("anylyzing: {}".format(self.path))
         self.filenum = 0
         self.files=[]
         self.infos={}
         self.filetypes=defaultdict(list)
         
-        self.filter="" #TODO use filter to filter for certain filetypes
+        self.filefilter="pdf" #TODO use filter to filter for certain filetypes (whitelist)
                 
         self.readfiles()
         self.sortfiles()
         #self.generatestatistics()
         
+    #TODO:  def calc_similarty_score()  #similarity score between several documents
+    # TODO:  use genim or sklearn (scikit-learn)
+    # http://radimrehurek.com/gensim/install.html
+        
     def readfiles(self):
         for subdir, dirs, files in os.walk(self.path):
             for file in files:
-                self.files+=[os.path.join(subdir, file)]
+                filetype=file[-3:]
+                if filetype in self.filefilter:
+                    self.files+=[os.path.join(subdir, file)]
                 
         logging.info("file-size: {}".format(len(self.files)))
         
@@ -129,12 +178,14 @@ class directory_infos(object):
         for f in self.files:
             self.filetypes[f[-3:]]+=[f]
         
-    def generate_meta_data_table(self):
+    def generate_meta_data(self, keyword=None):
         for f in self.files:
-            self.infos[f]=fileinfos(f).info
+            fi = fileinfos(f)
+            if keyword: fi.word_count(keyword)
+            self.infos[f]=fi.info
 
     def savetoexcel(self, filename="dirinfo.xls"):
-        self.infodb = pd.DataFrame.from_dict(self.infos)
+        self.infodb = pd.DataFrame.from_dict(self.infos,orient='index')
         self.infodb.to_excel(filename)
         
     def get_info(self):
@@ -213,7 +264,7 @@ def main():
     #TODO: configure logging level
 
     print("analyzing path: " + args.dir)
-    dirinfos = directory_infos(args.dir)    
+    dirinfos = directory_infos(args.dir)
     if args.clear:
         print("clear paratags")
         dirinfos.clear_paratags()
@@ -221,16 +272,17 @@ def main():
     elif args.write_tags:
         print("analyze files...")
         print("write tags...")
-        dirinfos.generate_meta_data_table()
+        dirinfos.generate_meta_data()
         interactive=False
         if interactive==True:
             from IPython import embed
             embed()
         dirinfos.write_tags()
         #dirinfos.savetoexcel()
-    elif args.stats:
+    else:#if args.stats:
         print("analyze files...")
-        dirinfos.generate_meta_data_table()
+        if args.keyword: print("search for keyword: '{}'".format(args.keyword))
+        dirinfos.generate_meta_data(keyword=args.keyword)
         print("save to excel file")
         dirinfos.savetoexcel("dirinfo.xls")
         return 0
