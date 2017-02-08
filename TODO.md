@@ -7,6 +7,8 @@
 * find "problematic"  files
 * look into zip files and find out their contents
 
+* use "fingerprints" of documents (the use of a selection of words) to categorize them
+
 * use sqlite db for storing data about files
 
 * give a "score" for certain tags
