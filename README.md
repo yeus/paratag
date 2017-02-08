@@ -20,6 +20,10 @@ Print all meta information in an image, including duplicate and unknown tags, so
     
 # installation
 
-    pip install --user pypdf2
-    pip install --user xlwt
-    pip install --user xattr  #for setting extended attributes
+## ubuntu 16.04
+
+    pip3 install --user pypdf2
+    pip3 install --user xlwt
+    pip3 install --user xattr  #for setting extended attributes
+    sudo apt install python3-pandas  #using databases
+
