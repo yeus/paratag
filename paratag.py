@@ -66,32 +66,32 @@ class fileinfos(object):
     
     def get_meta_data(self):
         logging.info("reading: " +self.filename)
-        try:
-            #strict=False because of this: https://github.com/mstamy2/PyPDF2/issues/244#issuecomment-173539608
-            #it basically helps the pdffilereader stops at all kinds of situations
-            pdf_toread = PdfFileReader(open(self.filename, "rb"), strict=False) 
-            if not pdf_toread.isEncrypted:
-                self.extractpdfdata(pdf_toread)
-            else:
-                self.info['encrypted']=True
+        if self.info['type'] == 'pdf':
+            try:
+                #strict=False because of this: https://github.com/mstamy2/PyPDF2/issues/244#issuecomment-173539608
+                #it basically helps the pdffilereader stops at all kinds of situations
+                pdf_toread = PdfFileReader(open(self.filename, "rb"), strict=False) 
+                self.info['pagenum']=-1 #potential unknown pagenumber if decrypted
                 try:
-                    self.info['pagenum']=-1 #unknown pagenumber
-                    pdf_toread.decrypt("")
-                    self.extractpdfdata(pdf_toread)
-                except Exception as e: 
-                    logging.warning(e)
-        except Exception as e:
-            logging.error(traceback.format_exc())
-            logging.warning("something is wrong with this file: " + self.filename)
+                    if pdf_toread.isEncrypted: 
+                        self.info['encrypted']=True# if pdf_toread.isEncrypted else False
+                        pdf_toread.decrypt("")
+                        self.info['pagenum']=-1 #potential unknown pagenumber if decrypted
+                    else:
+                        self.info['pagenum'] = pdf_toread.getNumPages()
+                        
+                    #TODO: getXmpMetadata()
+                    for k,v in pdf_toread.getDocumentInfo().items():  #loop through pdf metadata (exif)
+                        self.info[str(k)]=str(v)
+                        
+                except Exception as e:
+                    logging.error("{}\n{}".format(self.filename,traceback.format_exc()))
+            except Exception as e:
+                logging.error(traceback.format_exc())
+                logging.warning("something is wrong with this file: " + self.filename)
             
     def get_info(self,key):
         return self.info.get(key,np.nan)
-
-    def extractpdfdata(self, pdf_toread):
-        self.info['pagenum'] = pdf_toread.getNumPages()
-        #TODO: getXmpMetadata()
-        for k,v in pdf_toread.getDocumentInfo().items():  #loop through pdf XMP(?) metadata (exif)
-            self.info[str(k)]=str(v)
 
 #import json
 #>>> print json.dumps({'a':2, 'b':{'x':3, 'y':{'t1': 4, 't2':5}}},
@@ -164,10 +164,13 @@ class directory_infos(object):
                 tags = set([tags for tags in x['user.xdg.tags'].split(b",")])
             else: tags = set()
 
-            if info["pagenum"] > 200:
-                tags.update([b'book_pt'])
-            else:
-                tags.update([b'paper_pt'])
+            # find more categories:
+            #   * (presentation, thesis)
+            #   * manuals
+            if   200 < info["pagenum"]     : tags.update([b'book_pt'])
+            elif 20 < info["pagenum"] < 200: tags.update([b'report_pt'])
+            elif 0 < info["pagenum"] < 40  : tags.update([b'paper_pt'])
+            else: tags.update([b'docs_pt']) #everything else is a "document"
             #print("setting tags: " + ",".join([i.decode("utf-8") for i in tags]))
 
             #print("set tags")
