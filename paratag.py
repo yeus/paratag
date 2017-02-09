@@ -59,15 +59,16 @@ if sys.version_info[0] < 3:
     raise "Must be using Python 3"
 
 class fileinfos(object):
-    def __init__(self,filename):
+    def __init__(self, filename, detail = 1):
         self.filename=filename
         self.info={}        
         self.info['filename'] = self.filename
         filetype=self.filename.split(".")
+        self.xattr=xattr.xattr(self.filename)
         if len(filetype)>=1: self.info['type'] = filetype[-1]
         
         self.metadata_read=False  #for some functions that need metadata as a prerequisite (like word_count)
-        self.get_meta_data()
+        if detail == 1: self.get_meta_data()
         #TODO: initialize file database (that can be used to generate scores)
     
     #TODO: extract more metainformation with this method:
@@ -75,6 +76,10 @@ class fileinfos(object):
     #for example, extracting page dimensions (and recognizing presentations)
     def get_meta_data(self):
         logging.info("reading: " +self.filename)
+        
+        self.tags = self.get_xtags()
+        self.info["tags"]=(b",".join(self.tags)).decode('utf-8')
+        
         if self.info['type'] =='pdf':
             try:
                 #strict=False because of this: https://github.com/mstamy2/PyPDF2/issues/244#issuecomment-173539608
@@ -93,8 +98,10 @@ class fileinfos(object):
                         self.info['pagenum'] = pdf_toread.getNumPages()
                         
                     #TODO: getXmpMetadata()
-                    for k,v in pdf_toread.getDocumentInfo().items():  #loop through pdf metadata (exif)
-                        self.info[str(k)]=str(v)
+                    docinfo = pdf_toread.getDocumentInfo()
+                    if docinfo != None:
+                        for k,v in docinfo.items():  #loop through pdf metadata (exif)
+                            self.info[str(k)]=str(v)
                         
                 except Exception as e:
                     logging.error("{}\n{}".format(self.filename,traceback.format_exc()))
@@ -104,6 +111,40 @@ class fileinfos(object):
             
     def get_info(self,key):
         return self.info.get(key,np.nan)
+    
+    def get_xtags(self):
+        x = self.xattr
+
+        #print(x)
+        tags = set()
+        if 'user.xdg.tags' in x:
+          if x['user.xdg.tags'] is not b'':
+            print(x['user.xdg.tags'])
+            tags = set([tags for tags in x['user.xdg.tags'].strip(b", ").split(b",")])
+            print(tags)
+        
+        return tags
+    
+    def write_tags(self):
+        #TODO: update tag database after updating tags
+         try:
+          if self.info['type']=='pdf':
+              
+            tags = self.tags  
+            # find more categories:
+            #   * (presentation, thesis)
+            #   * manuals
+            if   200 < self.info["pagenum"]     : tags.update([b'book_pt'])
+            elif 20 < self.info["pagenum"] < 200: tags.update([b'report_pt'])
+            elif 0 < self.info["pagenum"] < 40  : tags.update([b'paper_pt'])
+            else: tags.update([b'docs_pt']) #everything else is a "document"
+            #print("setting tags: " + ",".join([i.decode("utf-8") for i in tags]))
+
+            #print("set tags")
+            self.xattr['user.xdg.tags']=b",".join(tags)
+         except Exception as e:
+            logging.warning("error setting attributes for file:" + self.filename)
+            logging.error(traceback.format_exc())
 
     def word_count(self,keyword=None):
         #TODO: from collections import Counter  #for counting all words
@@ -186,6 +227,7 @@ class directory_infos(object):
 
     def savetoexcel(self, filename="dirinfo.xls"):
         self.infodb = pd.DataFrame.from_dict(self.infos,orient='index')
+        self.infodb = self.infodb[['tags','pagenum','filename']]
         self.infodb.to_excel(filename)
         
     def get_info(self):
@@ -202,33 +244,13 @@ class directory_infos(object):
             newlist=[x for x in tags if not x.endswith(b'_pt')]
             #print(newlist)
             x['user.xdg.tags']=b",".join(newlist)
-            
-            
+                 
     def write_tags(self):
-        for f,info in self.infos.items():
-         try:
-          if info['type']=='pdf':
-            x = xattr.xattr(f)
+        for f in self.files:
+            fi = fileinfos(f)
+            fi.write_tags()
+            self.infos[f]=fi.info
 
-            #print(x)
-            if 'user.xdg.tags' in x:
-                tags = set([tags for tags in x['user.xdg.tags'].split(b",")])
-            else: tags = set()
-
-            # find more categories:
-            #   * (presentation, thesis)
-            #   * manuals
-            if   200 < info["pagenum"]     : tags.update([b'book_pt'])
-            elif 20 < info["pagenum"] < 200: tags.update([b'report_pt'])
-            elif 0 < info["pagenum"] < 40  : tags.update([b'paper_pt'])
-            else: tags.update([b'docs_pt']) #everything else is a "document"
-            #print("setting tags: " + ",".join([i.decode("utf-8") for i in tags]))
-
-            #print("set tags")
-            x['user.xdg.tags']=b",".join(tags)
-         except Exception as e:
-            logging.warning("error setting attributes for file:" + f)
-            logging.error(traceback.format_exc())
 
 #https://github.com/glamp/bashplotlib
 def plotdistribution(folder):
@@ -256,12 +278,15 @@ def main():
     parser = argparse.ArgumentParser(description="paratag")
     parser.add_argument('-c','--clear',action='store_true', help="clears all paratag 'tags' in this directory")
     parser.add_argument('-d','--dir',nargs='?', default=".", help="set directory to search for tags (default is current working directory)")
-    parser.add_argument('-w','--write_tags',nargs='?', default=None, help="write tags from database in xtended attributes of files")
+    parser.add_argument('-w','--write_tags',action='store_true', default=False, help="write tags from database in xtended attributes of files")
     parser.add_argument('-kw','--keyword', nargs='?', default=None, help="provide a keyword to search for with optional associated tag")
     parser.add_argument('-s','--stats',action='store_true', help="generate statistics for files and save them into excel file")
     #parser.add_argument('args', nargs=argparse.REMAINDER)
+    #https://docs.python.org/2/library/argparse.html#action  --> how to store arguments
     args = parser.parse_args()
     #TODO: configure logging level
+
+    logging.info(args)
 
     print("analyzing path: " + args.dir)
     dirinfos = directory_infos(args.dir)
@@ -272,7 +297,7 @@ def main():
     elif args.write_tags:
         print("analyze files...")
         print("write tags...")
-        dirinfos.generate_meta_data()
+        #dirinfos.generate_meta_data()
         interactive=False
         if interactive==True:
             from IPython import embed
@@ -283,9 +308,10 @@ def main():
         print("analyze files...")
         if args.keyword: print("search for keyword: '{}'".format(args.keyword))
         dirinfos.generate_meta_data(keyword=args.keyword)
+    if args.stats:
         print("save to excel file")
         dirinfos.savetoexcel("dirinfo.xls")
-        return 0
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main())

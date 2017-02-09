@@ -12,3 +12,11 @@
 * use sqlite db for storing data about files
 
 * give a "score" for certain tags
+
+
+* https://en.wikipedia.org/wiki/Universal_Decimal_Classification#5_Mathematics._Natural_sciences
+* Classification Schemes:
+    * https://en.wikipedia.org/wiki/Support_vector_machine
+
+* incorporating this:
+    * http://www.nltk.org/book/
